@@ -1,0 +1,23 @@
+sw5_yaml_tests	1
+
+description
+	Tests for sw5_yaml
+end
+
+tests_modules
+	sw5_yaml
+end
+
+requires
+	munit_base
+	sw5_yaml
+end
+
+test
+	name sw5_yaml_tests
+	topics sw5_yaml
+	framework munit
+end
+
+hidden
+language en_gb

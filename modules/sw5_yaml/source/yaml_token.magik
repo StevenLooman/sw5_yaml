@@ -1,0 +1,67 @@
+#% text_encoding = iso8859_1
+
+_package myaml
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML token.
+## First line of the file is line 1. First column op the line is 0.
+##
+## @slot {sw:symbol} type Type.
+## @slot {sw:char16_vector|sw:unset} value Value.
+## @slot {sw:integer} line Line.
+## @slot {sw:integer} column Column.
+##
+def_slotted_exemplar(
+	:yaml_token,
+	{
+		{:type, _unset, :readable, :public},
+		{:value, _unset, :readable, :public},
+		{:line, _unset, :readable, :public},
+		{:column, _unset, :readable, :public}
+	})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_token.new(type, value, line, column)
+	## Constructor.
+	## @param {sw:symbol} type Type.
+	## @param {sw:char16_vector|sw:unset} value Value.
+	## @param {sw:integer} line Line.
+	## @param {sw:integer} column Column.
+	## @return {_self}
+	_return _clone.init(type, value, line, column)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_token.init(type, value, line, column)
+	## Initializer.
+	## @param {sw:symbol} type Type.
+	## @param {sw:char16_vector|sw:unset} value Value.
+	## @param {sw:integer} line Line.
+	## @param {sw:integer} column Column.
+	## @return {_self}
+	.type << type
+	.value << value
+	.line << line
+	.column << column
+	_return _self
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_token.print_string_value
+	## Get value as print string.
+	## @return {sw:char16_vector}
+	_return _self.value.print_string
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+yaml_token.define_show_attributes(
+	:type,
+	:print_string_value,
+	:line,
+	:column)
+$

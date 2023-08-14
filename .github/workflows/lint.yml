@@ -1,0 +1,16 @@
+name: Lint
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  markdown_lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: DavidAnson/markdownlint-cli2-action@v11
+        with:
+          globs: '**/*.md'

@@ -1,0 +1,161 @@
+#% text_encoding = iso8859_1
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML encoder tests.
+##
+def_slotted_exemplar(
+	:yaml_encoder_test,
+	{
+	},
+	{@sw:test_case})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder_test.read_fixture(filename)
+	## Read a fixture file.
+	## @param {sw:char16_vector} filename
+	## @return {sw:char16_vector} Contents of file.
+	_local module << sw_module_manager.module(_self.module_name)
+	_local path << module.get_resource_file(filename, "data/fixtures")
+	_local stream << external_text_input_stream.new(path)
+	_protect
+		_local contents << ""
+		_loop
+			_local chr << stream.get()
+			_if chr _is _unset
+			_then
+				_return contents.trim_spaces()
+			_endif
+
+			contents << write_string(contents, chr)
+		_endloop
+	_protection
+		stream.close()
+	_endprotect
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder_test.encode(data)
+	## YAML encode a piece of data.
+	## @param {sw:unset|sw:char16_vector|sw:rope|sw:concurrent_hash_map} data
+	## @return {sw:char16_vector}
+	_local encoder << myaml:yaml_encoder.new()
+	_return encoder.generate_string(data)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_unset()
+	## Test encoding unset.
+	_local expected << _self.read_fixture("empty.yaml")
+	_local actual << _self.encode(_unset)
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_scalar()
+	## Test encoding a char16_vector.
+	_local expected << _self.read_fixture("scalar.yaml")
+	_local actual << _self.encode("test scalar")
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_scalar_quote()
+	## Test encoding a char16_vector with a quote.
+	_local expected << _self.read_fixture("scalar_quoted_escaped.yaml")
+	_local actual << _self.encode('abc"def')
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_sequence()
+	## Test encoding a rope.
+	_local expected << _self.read_fixture("sequence.yaml")
+	_local actual << _self.encode(
+		rope.new_with("a", _unset, "c"))
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_mapping_block()
+	## Test encoding a concurrent_hash_map.
+	_local expected << _self.read_fixture("mapping_block.yaml")
+	_local actual << _self.encode(
+		concurrent_hash_map.new_with(
+			"a", "1",
+			"b", _unset,
+			"c", "3"))
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_sequence_of_mappings()
+	## Test encoding a rope with concurrent_hash_maps.
+	_local expected << _self.read_fixture("sequence_of_mappings.yaml")
+	_local actual << _self.encode(
+		rope.new_with(
+			concurrent_hash_map.new_with(
+				"a", "b",
+				"c", "d"),
+			concurrent_hash_map.new_with(
+				"e", "f",
+				"g", "h")))
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_mapping_of_sequences()
+	## Test encoding a concurrent_hash_map with ropes.
+	_local expected << _self.read_fixture("mapping_of_sequences.yaml")
+	_local actual << _self.encode(
+		concurrent_hash_map.new_with(
+			"a", rope.new_with("1", "2"),
+			"b", rope.new_with("3", "4")))
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_sequence_of_sequences()
+	## Test decoding a document with a sequence.
+	_local expected << _self.read_fixture("sequence_of_sequences.yaml")
+	_local actual << _self.encode(
+		rope.new_with(
+			rope.new_with(
+				"a",
+				"b",
+				"c"),
+			rope.new_with(
+				"d",
+				"e",
+				"f")))
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder_test.test_mapping_of_mappings()
+	## Test decoding a document with a sequence.
+	_local expected << _self.read_fixture("mapping_of_mappings.yaml")
+	_local actual << _self.encode(
+		concurrent_hash_map.new_with(
+			"a", concurrent_hash_map.new_with(
+				"1", "a",
+				"2", "b",
+				"3", "c"),
+			"b", concurrent_hash_map.new_with(
+				"4", "d",
+				"5", "e",
+				"6", "f")))
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$

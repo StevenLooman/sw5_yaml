@@ -1,0 +1,96 @@
+#% text_encoding = iso8859_1
+
+_package myaml
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML decoder stack state.
+##
+## @slot {myaml:yaml_token} token Token this state started at.
+## @slot {sw:rope|sw:concurrent_hash_map|sw:char16_vector} value Value to work with.
+## @slot {sw:char16_vector|sw:unset} temp_key Temporary key, when building a mapping.
+##
+def_slotted_exemplar(
+	:yaml_decoder_state,
+	{
+		{:token, _unset, :readable, :public},
+		{:value, _unset, :readable, :public},
+		{:temp_key, _unset, :writable, :public}
+	})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+## Value class_name to state type mapping.
+## @return {sw:property_list<sw:symbol, sw:symbol>}
+yaml_decoder_state.define_shared_constant(
+	:state_type_mapping,
+	property_list.new_with(
+		:char16_vector, :scalar,
+		:rope, :sequence,
+		:concurrent_hash_map, :mapping),
+	:private)
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_state.new(token, value)
+	## Constructor.
+	## @param {myaml:yaml_token} token Token this state started at.
+	## @param {sw:rope|sw:concurrent_hash_map|sw:char16_vector} value Value.
+	## @return {_self}
+	_return _clone.init(token, value)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder_state.init(token, value)
+	## Initializer.
+	## @param {myaml:yaml_token} token Token this state started at.
+	## @param {sw:rope|sw:concurrent_hash_map|sw:char16_vector} value Value.
+	## @return {_self}
+	.token << token
+	.value << value
+	.temp_key << _unset
+	_return _self
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_state.indent
+	## Get the indent (column) for this state.
+	## @return {sw:integer}
+	_return .token.column
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_state.state_type
+	## Get state type, either `:scalar`, `:sequence`, or `:mapping`.
+	## @return {sw:symbol}
+	_return _self.state_type_mapping[.value.class_name]
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_state.print_string_value
+	## Get value as print string.
+	## @return {sw:char16_vector}
+	_return .value.print_string
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_state.print_string_temp_key
+	## Get temp_key as print string.
+	## @return {sw:char16_vector}
+	_return .temp_key.print_string
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+yaml_decoder_state.define_show_attributes(
+	:indent,
+	:state_type,
+	:token,
+	:print_string_value,
+	:print_string_temp_key)
+$

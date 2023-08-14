@@ -1,0 +1,562 @@
+#% text_encoding = iso8859_1
+
+_package myaml
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML decoder.
+##
+## Options are:
+## - `:keep_scalar_keys?` `_true`/`_false` (defaults to `_false`)
+##   Do not convert the mapping-keys (scalars) to a `symbol`, keeping the `char16_vector`,
+##     mimicking `json_decoder` behavior.
+##
+## @slot {sw:property_list} options
+## @slot {sw:stack<yaml_decoder_state>} stack
+## @slot {myaml:yaml_tokenizer} tokenizer
+##
+def_slotted_exemplar(
+	:yaml_decoder,
+	{
+		{:options, _unset},
+		{:stack, _unset},
+		{:tokenizer, _unset}
+	})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder.new(_gather keys_and_values)
+	## Constructor.
+	## @param {sw:symbol|sw:false} keys_and_values
+	## @return {_self}
+	_return _clone.init(_scatter keys_and_values)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.init(_gather keys_and_values)
+	## Initializer.
+	## @param {sw:symbol|sw:false} keys_and_values
+	## @return {_self}
+	.options << property_list.new_from_gathered(keys_and_values)
+	.stack << stack.new()
+	.tokenizer << _unset
+	_return _self
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder.parse_string(string)
+	## Parse YAML string.
+	## @param {sw:char16_vector} string YAML string.
+	## @return {sw:char16_vector|sw:concurrent_hash_map|sw:rope|sw:unset} Parsed YAML document, or unset if stream was empty.
+	_local input_stream << internal_text_input_stream.new(string)
+	_local stream << yaml_input_stream.new(input_stream)
+	_local result << _self.parse_stream(stream)
+	_return _self.post_process(result)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder.parse_file(path)
+	## Parse YAML file.
+	## @param {sw:char16_vector} path Path to file.
+	## @return {sw:char16_vector|sw:concurrent_hash_map|sw:rope|sw:unset} Parsed YAML document, or unset if stream was empty.
+	_local input_stream << external_text_input_stream.new(path)
+	_local stream << yaml_input_stream.new(input_stream)
+	_protect
+		_local result << _self.parse_stream(stream)
+		_return _self.post_process(result)
+	_protection
+		input_stream.close()
+	_endprotect
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.parse_stream(stream)
+	## Parse input stream.
+	## @param {myaml:yaml_input_stream} stream Input stream.
+	## @return {sw:char16_vector|sw:concurrent_hash_map|sw:rope|sw:unset} Parsed YAML document, or unset if stream was empty.
+	.tokenizer << yaml_tokenizer.new(stream)
+	_for token _over .tokenizer.tokens()
+	_loop
+		_if token.type _is :eof
+		_then
+			_self.handle_eof(token)
+		_elif token.type _is :newline
+		_then
+			_self.handle_newline(token)
+		_elif token.type _is :indent
+		_then
+			_self.handle_indent(token)
+		_elif token.type _is :scalar
+		_then
+			_self.handle_scalar(token)
+		_elif token.type _is :dash
+		_then
+			_self.handle_dash(token)
+		_elif token.type _is :colon
+		_then
+			_self.handle_colon(token)
+		_elif token.type _is :mapping_start
+		_then
+			_self.handle_mapping_start(token)
+		_elif token.type _is :mapping_end
+		_then
+			_self.handle_mapping_end(token)
+		_elif token.type _is :sequence_start
+		_then
+			_self.handle_sequence_start(token)
+		_elif token.type _is :sequence_end
+		_then
+			_self.handle_sequence_end(token)
+		_elif token.type _is :comma
+		_then
+			_self.handle_comma(token)
+		_else
+			condition.raise(
+				:yaml_decoder_error,
+				:token, token,
+				:string, write_string("Unexpected token: ", token))
+		_endif
+	_endloop
+
+	# Return (only) state left on stack.
+	_if .stack.size > 1
+	_then
+		condition.raise(
+			:yaml_decoder_error,
+			:string, "Found multiple things on stack, invalid document or decoder error")
+	_endif
+
+	_local current_state << _self.current_state
+	_if current_state _is _unset
+	_then
+		_return _unset
+	_endif
+
+	_return current_state.value
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_eof(token)
+	## Handle EOF token.
+	## @param {myaml:yaml_token} token
+	_self.resolve_state_stack(token)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_newline(token)
+	## Handle newline token.
+	## @param {myaml:yaml_token} token
+	system  # Pass, maybe useful later on?
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_indent(token)
+	## Handle indent token.
+	## @param {myaml:yaml_token} token
+	_if _self.current_state _isnt _unset
+	_then
+		# Communicate back the min indent to the tokenizer.
+		.tokenizer.scalar_indent << _self.current_state.indent + 1
+	_else
+		.tokenizer.scalar_indent << 0
+	_endif
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_scalar(token)
+	## Handle scalar token.
+	## @param {myaml:yaml_token} token
+	_self.resolve_state_stack(token)
+
+	_local scalar << token.value
+	_if scalar _is _unset
+	_then
+		condition.raise(
+			:yaml_decoder_error,
+			:string, "Token value cannot be unset",
+			:token, token)
+	_endif
+
+	_local new_state << yaml_decoder_state.new(token, scalar)
+	_self.push_state(new_state)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_dash(token)
+	## Handle dash token.
+	## @param {myaml:yaml_token} token
+	_self.resolve_state_stack(token)
+
+	_if _self.current_state _is _unset _orif
+	    _self.current_state.indent <> token.column
+	_then
+		_local sequence << rope.new()
+		_local state << yaml_decoder_state.new(token, sequence)
+		_self.push_state(state)
+	_endif
+
+	_local seq << _self.current_state.value
+	seq.add(_unset)
+	_self.current_state.temp_key << seq.size
+
+	# Communicate back the min indent to the tokenizer.
+	.tokenizer.scalar_indent << _self.current_state.indent + 1
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_colon(token)
+	## Handle colon token.
+	## @param {myaml:yaml_token} token
+	# This is actually a mapping, but we have pushed a string already.
+	# So replace that state with a new one.
+	_local current_state << _self.current_state
+	_if current_state _is _unset _orif
+	    current_state.state_type _isnt :scalar
+	_then
+		condition.raise(
+			:yaml_decoder_error,
+			:token, token,
+			:string, "Unexpected token")
+	_endif
+
+	# Communicate back the min indent to the tokenizer.
+	.tokenizer.scalar_indent << _self.current_state.indent + 1
+
+	_local parent_state << _self.parent_state
+	_if parent_state _isnt _unset _andif
+	    parent_state.token.type _is :mapping_start
+	_then
+		# Flow style, mapping already exists, just set key.
+		_local key_state << _self.pop_state()
+		_local key << key_state.value
+		parent_state.temp_key << key
+		parent_state.value[key] << _unset
+	_elif parent_state _isnt _unset _andif
+	      parent_state.state_type _is :mapping _andif  # Actually, a key can also be a mapping?
+	      parent_state.indent _is current_state.indent
+	_then
+		# Block style, mapping already exists, just set key.
+		_local key_state << _self.pop_state()
+		_local key << key_state.value
+		parent_state.temp_key << key
+		parent_state.value[key] << _unset
+	_else
+		# Block style, first entry, insert a mapping state.
+		_local key_state << _self.pop_state()
+		_local key_state_token << key_state.token  # Use key as token, to keep indenting.
+		_local mapping << concurrent_hash_map.new()
+		_local mapping_state << yaml_decoder_state.new(key_state_token, mapping)
+		_self.push_state(mapping_state)
+
+		_local key << key_state.value
+		mapping_state.temp_key << key
+		mapping_state.value[key] << _unset
+	_endif
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_mapping_start(token)
+	## Handle mapping_start token.
+	## @param {myaml:yaml_token} token
+	_self.resolve_state_stack(token)
+
+	_local mapping << concurrent_hash_map.new()
+	_local state << yaml_decoder_state.new(token, mapping)
+	_self.push_state(state)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_mapping_end(token)
+	## Handle mapping_end token.
+	## @param {myaml:yaml_token} token
+	_local current_state << _self.current_state
+	_if current_state.state_type _is :mapping _andif
+	    current_state.value.empty?
+	_then
+		# Empty sequence, nothing to do.
+		system  # pass
+	_else
+		# Add to parent state.
+		_local parent_state << _self.parent_state
+		_if parent_state _is _unset _orif
+		    parent_state.state_type _isnt :mapping
+		_then
+			condition.raise(
+				:yaml_decoder_error,
+				:token, token,
+				:string, "Unexpected token")
+		_endif
+
+		_self.pop_state()
+		_local temp_key << parent_state.temp_key
+		_local value << current_state.value
+		parent_state.value[temp_key] << value
+		parent_state.temp_key << _unset
+	_endif
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_sequence_start(token)
+	## Handle sequence_start token.
+	## @param {myaml:yaml_token} token
+	_self.resolve_state_stack(token)
+
+	_local sequence << rope.new()
+	_local state << yaml_decoder_state.new(token, sequence)
+	_self.push_state(state)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_sequence_end(token)
+	## Handle sequence_end token.
+	## @param {myaml:yaml_token} token
+	_local current_state << _self.current_state
+	_if current_state.state_type _is :sequence _andif
+	    current_state.value.empty?
+	_then
+		# Empty sequence, nothing to do.
+		system  # pass
+	_else
+		# Add current state to parent state (the sequence).
+		_local parent_state << _self.parent_state
+		_if parent_state _is _unset _orif
+		    parent_state.state_type _isnt :sequence
+		_then
+			condition.raise(
+				:yaml_decoder_error,
+				:token, token,
+				:string, "Unexpected token")
+		_endif
+
+		_self.pop_state()
+		_local value << current_state.value
+		parent_state.value.add(value)
+	_endif
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.handle_comma(token)
+	## Handle comma token.
+	## @param {myaml:yaml_token} token
+	_local parent_state << _self.parent_state
+	_if parent_state _is _unset _orif
+	    parent_state.state_type _isnt :sequence _andif
+	    parent_state.state_type _isnt :mapping
+	_then
+		condition.raise(
+			:yaml_decoder_error,
+			:token, token,
+			:string, "Unexpected token")
+	_endif
+
+	_local popped_state << _self.pop_state()
+	_local value << popped_state.value
+	_if parent_state.state_type _is :sequence
+	_then
+		parent_state.value.add(value)
+	_elif parent_state.state_type _is :mapping
+	_then
+		_local key << parent_state.temp_key
+		parent_state.value[key] << value
+		parent_state.temp_key << _unset
+	_else
+		condition.raise(
+			:yaml_decoder_error,
+			:token, token,
+			:string, "Invalid state")
+	_endif
+_endmethod
+$
+
+
+
+
+
+
+
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.push_state(state)
+	## Push a state.
+	## @param {myaml:yaml_decoder_state} state State to push.
+	## @return {myaml:yaml_decoder_state}
+	_return .stack.push(state)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.pop_state()
+	## Pop a state.
+	## @return {myaml:yaml_decoder_state}
+	_local state << .stack.pop()
+	_return state
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.current_state
+	## Get current state.
+	## @return {myaml:yaml_decoder_state|sw:unset}
+	_return .stack.top_of_stack
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.parent_state
+	## Get parent state.
+	## @return {myaml:yaml_decoder_state|sw:unset}
+	_if .stack.size < 2
+	_then
+		_return _unset
+	_endif
+
+	_return .stack[2]
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.state_at_indent(indent_size, token)
+	## Pop state to indent_size.
+	## @param {sw:integer} indent_size
+	## @param {myaml:yaml_token} token
+	## @return {myaml:yaml_decoder_state}
+	_for state _over .stack.fast_elements()
+	_loop
+		_if state.indent _is indent_size
+		_then
+			_return state
+		_endif
+	_endloop
+
+	condition.raise(
+		:yaml_decoder_error,
+		:token, token,
+		:string, "Could not match indent")
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.resolve_state_stack(token)
+	## Unwind stack up to the current indent, setting values at parents from children.
+	## This should be run _before_ any data is taken in, before tokens.
+	## @param {myaml:yaml_token} token
+	_local token_column <<
+		_if token.type _is :eof
+		_then
+			# Cheat a bit to force complete stack unwinding at EOF.
+			>> 0
+		_else
+			>> token.column
+		_endif
+
+	# Keep on poppin' until we are back at the current indent.
+	_while _self.current_state _isnt _unset _andif
+	       _self.current_state.indent > token_column
+	_loop
+		_local parent_state << _self.parent_state
+		_if parent_state _is _unset
+		_then
+			_leave
+		_endif
+
+		_local current_state << _self.pop_state()
+		_self.merge_child_into_parent_state(parent_state, current_state, token)
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.merge_child_into_parent_state(parent_state, current_state, token)
+	## Resolve parent_state/child_state.
+	## @param {myaml:yaml_decoder_state} parent_state
+	## @param {myaml:yaml_decoder_state} current_state
+	## @param {myaml:yaml_token} token
+	_local value << current_state.value
+	_if parent_state.state_type _is :sequence
+	_then
+		_local key << parent_state.temp_key
+		parent_state.value[key] << value
+		parent_state.temp_key << _unset
+	_elif parent_state.state_type _is :mapping
+	_then
+		_local key << parent_state.temp_key
+		parent_state.value[key] << value
+		parent_state.temp_key << _unset
+	_else
+		sw:condition.raise(
+			:yaml_decoder_error,
+			:token, token,
+			:string, "Unexpected state")
+	_endif
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.post_process(result)
+	## Post process result.
+	## @param {sw:char16_vector|sw:rope|sw:concurrent_hash_map} result
+	## @return {sw:char16_vector|sw:rope|sw:concurrent_hash_map}
+	_if .options[:keep_scalar_keys?] _isnt _true
+	_then
+		_return _self.post_process_mapping_symbol_keys(result)
+	_endif
+
+	_return result
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder.post_process_mapping_symbol_keys(result)
+	## Convert mapping `sw:char16_vector`-keys to `sw:symbol`.
+	## @param {sw:char16_vector|sw:rope|sw:concurrent_hash_map|sw:unset} result
+	## @return {sw:char16_vector|sw:rope|sw:concurrent_hash_map|sw:unset}
+	_if result _is _unset _orif
+	    result.is_kind_of?(char16_vector)
+	_then
+		_return result
+	_elif result.is_kind_of?(rope)
+	_then
+		_local new_result << rope.new()
+		_for element _over result.fast_elements()
+		_loop
+			_local new_element << _self.post_process_mapping_symbol_keys(element)
+			new_result.add(new_element)
+		_endloop
+		_return new_result
+	_elif result.is_kind_of?(concurrent_hash_map)
+	_then
+		_local new_result << concurrent_hash_map.new()
+		_for key, element _over result.fast_keys_and_elements()
+		_loop
+			_local new_key <<
+				_if key.is_kind_of?(char16_vector)
+				_then
+					>> key.as_symbol()
+				_else
+					>> key
+				_endif
+			new_result[new_key] << _self.post_process_mapping_symbol_keys(element)
+		_endloop
+		_return new_result
+	_else
+		condition.raise(
+			:yaml_decoder_error,
+			:string, "Unknown object")
+	_endif
+_endmethod
+$

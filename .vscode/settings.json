@@ -1,0 +1,18 @@
+{
+    "magik.environment": "/opt/Smallworld5.3.0.0/core/config/environment",
+    "magik.javaHome": "/usr/lib/jvm/java-17-openjdk-amd64",
+    "magik.smallworldGis": "/opt/Smallworld5.3.0.0/core",
+    "magik.typing.enableChecks": true,
+    "magik.typing.typeDatabasePaths": [
+        "../sw530_swaf_types.jsonl"
+    ],
+    "magik.aliases": "/opt/Smallworld5.3.0.0/core/config/gis_aliases",
+    "editor.cursorBlinking": "solid",
+    "editor.cursorStyle": "block",
+    "editor.rulers": [
+        120
+    ],
+    "editor.insertSpaces": false,
+    "editor.tabSize": 8,
+    "files.encoding": "iso88591"
+}

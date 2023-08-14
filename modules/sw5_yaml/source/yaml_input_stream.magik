@@ -1,0 +1,177 @@
+#% text_encoding = iso8859_1
+
+_package myaml
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML input stream, with special handling when up to EOF is read.
+##
+## The `sw:external_text_input_stream` cannot `unget()` once EOF was hit, or when it reads a new chunk;
+## it raises the error: self_error: a sw:external_text_input_stream unget - too far).
+##
+## This input stream works around this by keeping its own `unget()` mechanism, it buffers
+## the already gotten parts.
+##
+## First line is line 1. First column is column 0.
+##
+## @slot {sw:buffered_input_stream} stream Input stream.
+## @slot {sw:false} eof_hit? EOF hit on stream?
+## @slot {sw:char16_vector} left Items left after hitting EOF on main stream.
+## @slot {sw:integer} line Current line.
+## @slot {sw:integer} column Current column.
+##
+def_slotted_exemplar(
+	:yaml_input_stream,
+	{
+		{:stream, _unset},
+		{:eof_hit?, _false},
+		{:left, _unset},
+		{:line, 1, :readable, :public},
+		{:column, 0, :readable, :public}
+	})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream.new(stream)
+	## Constructor.
+	## @param {sw:buffered_input_stream} stream
+	## @return {_self}
+	_return _clone.init(stream)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_input_stream.init(stream)
+	## Initializer.
+	## @param {sw:buffered_input_stream} stream
+	## @return {_self}
+	.stream << stream
+	.left << ""
+	.line << 1
+	.column << 0
+	_return _self
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream.peek()
+	## Peek a single character.
+	## @return {sw:character|sw:unset}
+	_return _self.peek_ahead(1)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream.peek_ahead(nth)
+	## Peek the second character.
+	## @param {sw:integer} nth Nth character to peek.
+	##                         A value of `1` is the same as invoking `peek()`.
+	## @return {sw:character|sw:unset}
+	_if nth < 1
+	_then
+		condition.raise(:error, :string, "Only positive integers are accepted")
+	_endif
+
+	# Store location before peeking ahead.
+	_local line_before << .line
+	_local column_before << .column
+
+	# Fetch things from stream, but to keep .left in mind.
+	_local gotten << rope.new()  # type: sw:rope<sw:character>
+	_over 1.upto(nth)
+	_loop @over_getting
+		_local chr << _self.get()
+		_if chr _is _unset
+		_then
+			_leave @over_getting
+		_endif
+
+		gotten.add_last(chr)
+	_endloop
+
+	# Put things back.
+	_for chr _over gotten.elements_in_reverse()
+	_loop
+		_self.unget(chr)
+	_endloop
+
+	# Restore location from before peeking ahead.
+	.line << line_before
+	.column << column_before
+
+	_if gotten.size < nth
+	_then
+		# Hit (past) EOF?
+		_return _unset
+	_endif
+
+	_return gotten.last
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream.get()
+	## Get a single character.
+	## @return {sw:character|sw:unset}
+	_local chr <<
+		_if _not .left.empty?
+		_then
+			_local first << .left.first
+			.left << .left.subseq(2)
+			>> first
+		_else
+			>> .stream.get()
+		_endif
+	_if chr _is character.return
+	_then
+		.column << 0
+	_elif chr _is character.newline
+	_then
+		.line +<< 1
+		.column << 0
+	_elif chr _isnt _unset
+	_then
+		.column +<< 1
+	_endif
+
+	_return chr
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream.get_n(size)
+	## Get multiple characters.
+	## If EOF is hit, less characters will be gotten.
+	## @param {sw:integer} size Number of characters to get.
+	## @return {sw:char16_vector}
+	_local string << ""
+
+	_over 1.upto(size)
+	_loop
+		_local chr << _self.get()
+		_if chr _is _unset
+		_then
+			_leave
+		_endif
+
+		string << write_string(string, chr)
+	_endloop
+
+	_return string
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_input_stream.unget(chr)
+	## Unget a character.
+	## @param {sw:character} chr
+	_if chr _is _unset
+	_then
+		condition.raise(
+			:error,
+			:string, "Cannot unget _unset")
+	_endif
+
+	.left << write_string(chr, .left)
+_endmethod
+$

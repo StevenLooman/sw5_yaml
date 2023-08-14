@@ -1,0 +1,39 @@
+#% text_encoding = iso8859_1
+
+# Load product.
+_block
+	_local sw5_yaml_path << system.pathname_up(!source_file!, 2)
+
+	# Add munit.
+	_local munit_path << system.pathname_down(
+		system.pathname_up(sw5_yaml_path),
+		"munit")
+	smallworld_product.add_product(munit_path)
+
+	# Add sw5_yaml.
+	smallworld_product.add_product(sw5_yaml_path)
+_endblock
+$
+
+sw:concurrent_hash_map.define_show_attributes(
+	:size)
+$
+
+# Run tests.
+_block
+	_local product << smallworld_product.product(:sw5_yaml)
+	_local pred_parent_product << predicate.eq(:parent, product)
+	_local test_products << smallworld_product.products.elements.all_elements_satisfying(pred_parent_product)
+	_local all_products << rope.new_with(product, _scatter test_products)
+	_for product _over all_products.fast_elements()
+	_loop
+		# Load all modules.
+		_for module _over product.defined_modules.fast_elements()
+		_loop @over_module
+			sw_module_manager.load_module(module.name, _unset, :force_reload?, _true)
+		_endloop
+	_endloop
+
+	smallworld_product.run_test_cases()
+_endblock
+$

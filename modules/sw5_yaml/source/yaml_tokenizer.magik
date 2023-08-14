@@ -1,0 +1,751 @@
+#% text_encoding = iso8859_1
+
+_package myaml
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML input stream lexer.
+##
+## @slot {myaml:yaml_input_stream} stream Input stream.
+## @slot {sw:integer} scalar_indent Scalar indent.
+## @slot {sw:integer} flow_depth Flow style depth.
+##
+def_slotted_exemplar(
+	:yaml_tokenizer,
+	{
+		{:stream, _unset},
+		{:scalar_indent, 0, :writable, :public},
+		{:flow_depth, 0}
+	})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+## Escaped characters.
+## @return {sw:property_list<sw:character, sw:character>}
+yaml_tokenizer.define_shared_constant(
+	:escaped_characters,
+	concurrent_hash_map.new_with(
+		%', %',
+		%", %",
+		%n, character.newline,
+		%r, character.return,
+		%t, character.tab),
+	:private)
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_tokenizer.new(stream)
+	## Constructor.
+	## @param {myaml:yaml_input_stream} stream
+	## @return {_self}
+	_return _clone.init(stream)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.init(stream)
+	## Initializer.
+	## @param {myaml:yaml_input_stream} stream
+	## @return {_self}
+	.stream << stream
+	_return _self
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_iter _method yaml_tokenizer.tokens()
+	## Get tokens from stream.
+	## @loop {myaml:yaml_token} Token.
+	_loop @over_stream
+		_local peeked << .stream.peek()
+		_if _self.next_is?(_unset)
+		_then
+			_local token << _self.read_token(:eof, _unset)
+			_loopbody(token)
+
+			_leave @over_stream
+		_elif _self.next_is?("#")
+		_then
+			_self.read_comment()
+		_elif _self.next_is?(character.return, character.newline)
+		_then
+			_local (newline_token, indent_token) << _self.read_newline()
+			_loopbody(newline_token)
+			_loopbody(indent_token)
+		_elif _self.next_is?(
+			write_string("-", character.space),
+			write_string("-", character.tab),
+			write_string("-", character.return),
+			write_string("-", character.newline))
+		_then
+			_local token << _self.read_token(
+				:dash,
+				write_string("-", character.space),
+				write_string("-", character.tab),
+				"-")
+			_loopbody(token)
+		_elif _self.next_is?(
+			write_string(":", character.space),
+			write_string(":", character.tab),
+			write_string(":", character.return),
+			write_string(":", character.newline))
+		_then
+			_local token << _self.read_token(
+				:colon,
+				write_string(":", character.space),
+				write_string(":", character.tab),
+				":")
+			_loopbody(token)
+		_elif _self.next_is?("{")
+		_then
+			_local token << _self.read_token(:mapping_start, "{")
+			_loopbody(token)
+			.flow_depth +<< 1
+		_elif _self.next_is?("}")
+		_then
+			_local token << _self.read_token(:mapping_end, "}")
+			.flow_depth -<< 1
+			_loopbody(token)
+		_elif _self.next_is?("[")
+		_then
+			_local token << _self.read_token(:sequence_start, "[")
+			_loopbody(token)
+			.flow_depth +<< 1
+		_elif _self.next_is?("]")
+		_then
+			_local token << _self.read_token(:sequence_end, "]")
+			.flow_depth -<< 1
+			_loopbody(token)
+		_elif _self.next_is?(",") _andif
+		      _self.in_flow_style?
+		_then
+			_local token << _self.read_token(:comma, ",")
+			_loopbody(token)
+		_elif _self.next_is?("|")
+		_then
+			_local token << _self.read_scalar(:literal)
+			_loopbody(token)
+		_elif _self.next_is?(">")
+		_then
+			_local token << _self.read_scalar(:folded)
+			_loopbody(token)
+		_elif _self.next_is?(
+			"'",
+			'"')
+		_then
+			_local token << _self.read_scalar_quoted()
+			_loopbody(token)
+		_elif _self.next_is?(
+			character.space,
+			character.tab)
+		_then
+			# Whitespacing, probably safe to ignore.
+			_self.get_chars(character.space, character.tab)
+		_elif _self.next_is_scalar?()
+		_then
+			_local token << _self.read_scalar()
+			_loopbody(token)
+		_else
+			condition.raise(
+				:yaml_tokenizer_error,
+				:string, write_string("Unexpected character: ", peeked),
+				:value, peeked,
+				:line, .stream.line,
+				:column, .stream.column)
+		_endif
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.next_is?(_gather nexts)
+	## Test if next is any of `nexts`.
+	## @param {sw:char16_vector|sw:character|sw:unset} nexts
+	## @return {sw:false} True if a match was found.
+	## @return {sw:char16_vector|sw:unset} Matched `next`.
+	_for next _over nexts.fast_elements()
+	_loop @over_nexts
+		_if next _is _unset
+		_then
+			_if .stream.peek() _is _unset
+			_then
+				_return _true, _unset
+			_endif
+
+			# We don't want to check "unset".
+			_continue
+		_endif
+
+		_local next_str << next.write_string
+		_for index, next_chr _over next_str.fast_keys_and_elements()
+		_loop
+			_local peeked << .stream.peek_ahead(index)
+			_if peeked _isnt next_chr
+			_then
+				_continue @over_nexts
+			_endif
+		_endloop
+
+		# Found a match!
+		_return _true, next_str
+	_endloop
+
+	_return _false, _unset
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.next_is_scalar?()
+	## Test if next is a scalar start.
+	## @return {sw:false}
+	_return _not _self.next_is?(
+		_unset,
+		character.space,
+		character.tab,
+		character.return,
+		character.newline,
+		": ",
+		write_string(":", character.return),
+		write_string(":", character.newline),
+		"- ",
+		write_string("-", character.return),
+		write_string("-", character.newline),
+		"{",
+		"[",
+		"|",
+		">")
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.in_flow_style?
+	## Are we in flow style?
+	## @return {sw:false}
+	_return .flow_depth > 0
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.read_comment()
+	## Read comment to EOL/EOF, discarding all.
+	## @return {myaml:yaml_token}
+	_local token_value << ""
+	_local token_line << .stream.line
+	_local token_column << .stream.column
+	_loop
+		_local value << .stream.peek()
+		_if value _is _unset _orif
+		    value _is character.return _orif
+		    value _is character.newline
+		_then
+			_return yaml_token.new(:comment, token_value, token_line, token_column)
+		_endif
+
+		.stream.get()
+		token_value << write_string(token_value, value)
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.read_newline()
+	## Read a plain scalar.
+	## @return {myaml:yaml_token} Newline token.
+	## @return {myaml:yaml_token} Indent token.
+	# Read up to newline, including all returns.
+	_local token_value << ""
+	_local newline_line << .stream.line
+	_local newline_column << .stream.column
+	_local newline_token <<
+		_loop @over_newline
+			# Note this isn't a peek. We need to consume the (first) newline (including returns).
+			_local chr << .stream.get()
+			token_value << write_string(token_value, chr)
+
+			_if chr _is character.newline
+			_then
+				_local token << yaml_token.new(:newline, token_value, newline_line, newline_column)
+				_leave @over_newline _with token
+			_endif
+		_endloop
+
+	# Determine :indent from here.
+	_local indent_line << .stream.line
+	_local indent_column << .stream.column
+	_local whitespace << _self.get_chars(character.space, character.tab)
+	_local indent_token << yaml_token.new(:indent, whitespace, indent_line, indent_column)
+	_return newline_token, indent_token
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.read_scalar_flow_style(_optional indicator)
+	## Read a plain scalar in flow style.
+	## @param {sw:symbol} indicator
+	## @return {myaml:yaml_token}
+	_if indicator _isnt _unset
+	_then
+		sw:condition.raise(
+			:yaml_tokenizer_error,
+			:string, "Unexpected indicator when reading flow style scalar",
+			:line, token_line,
+			:column, token_column)
+	_endif
+
+	_local token_line << .stream.line
+	_local token_column << .stream.column
+
+	# Read up to `: `, `,`, eof, eol.
+	_local token_value << _self.get_up_to(
+		"[", "]",
+		"{", "}",
+		": ",
+		write_string(":", character.return),
+		write_string(":", character.newline),
+		",")
+	_return yaml_token.new(:scalar, token_value, token_line, token_column)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.read_scalar(_optional indicator)
+	## Read a plain scalar.
+	## @param {sw:symbol} indicator
+	## @return {myaml:yaml_token}
+	_local token_line << .stream.line
+	_local token_column << .stream.column
+	_if _self.in_flow_style?
+	_then
+		_return _self.read_scalar_flow_style(indicator)
+	_endif
+
+	_local lines << rope.new()  # type: sw:rope<sw:char16_vector>
+	_local chomping_indicator << _unset
+	_if indicator _isnt _unset
+	_then
+		# Consume indicator.
+		.stream.get()
+
+		# Read chomping indicator.
+		_local chr << .stream.peek()
+		chomping_indicator <<
+			_if chr _is %-
+			_then
+				>> :strip
+			_elif chr _is %+
+			_then
+				>> :keep
+			_endif
+		_if chomping_indicator _isnt _unset
+		_then
+			.stream.get()
+		_endif
+
+		# Require nothing after indicator, except for whitespace/comment.
+		# Note that the comment is consumed.
+		_local line << _self.get_up_to(character.newline).trim_spaces()
+		_if _not line.empty? _andif
+		    _not line.matches?("#*")
+		_then
+			condition.raise(
+				:yaml_tokenizer_error,
+				:string, "Unexpected character",
+				:value, line.first,
+				:line, token_line,
+				:column, token_column)
+		_endif
+	_else
+		# Read first line.
+		_local (scalar, matched_stop) << _self.get_up_to(
+			": ",
+			write_string(":", character.return),
+			write_string(":", character.newline),
+			character.return,
+			character.newline,
+			"#")
+
+		_if matched_stop <> character.return.write_string _andif
+		    matched_stop <> character.newline.write_string
+		_then
+			# Matched a construct, done reading scalar.
+			_return yaml_token.new(:scalar, scalar.trim_spaces(), token_line, token_column)
+		_endif
+
+		# Handle comment.
+		_if matched_stop = "#"
+		_then
+			# Skip rest of line.
+			_self.get_up_to(character.return, character.newline)
+		_endif
+
+		lines.add_last(scalar)
+	_endif
+
+	# Start peeking until we see the end of this multi-line scalar.
+	_local nth << 0
+	_loop @over_stream
+		_local line_nth << nth + 1
+		_local chr << .stream.peek_ahead(line_nth)
+		_if chr _is _unset
+		_then
+			# Handle EOF.
+			_leave @over_stream
+		_endif
+
+		# Handle newline.
+		_local newline? << chr _is character.newline
+		_if _not newline?
+		_then
+			# Huh?
+			sw:condition.raise(
+				:yaml_tokenizer_error,
+				:string, "Unexpected non-newline character",
+				:value, chr,
+				:line, .stream.line,
+				:column, .stream.column)
+		_endif
+		line_nth +<< 1
+
+		# Peek indent.
+		_local indent << ""
+		_loop @over_indent
+			_local chr2 << .stream.peek_ahead(line_nth)
+			_if chr2 _isnt character.space _andif
+			    chr2 _isnt character.tab
+			_then
+				_leave @over_indent
+			_endif
+
+			line_nth +<< 1
+			indent << write_string(indent, chr2)
+		_endloop
+
+		# Ensure still indented.
+		_local next_is_newline? <<
+			.stream.peek_ahead(line_nth) _is character.return _orif
+			.stream.peek_ahead(line_nth) _is character.newline
+		_if indent.size < .scalar_indent _andif
+		    _not next_is_newline?  # Empty line.
+		_then
+			# Don't update `nth`, leave it all to be interpreted next.
+			_leave @over_stream
+		_endif
+
+		# Peek rest of line, until return/newline.
+		_local scalar_part << ""
+		_loop @over_scalar
+			_local chr2 << .stream.peek_ahead(line_nth)
+			_if chr2 _is _unset _orif
+			    chr2 _is character.return _orif
+			    chr2 _is character.newline
+			_then
+				_leave @over_scalar
+			_endif
+
+			line_nth +<< 1
+			scalar_part << write_string(scalar_part, chr2)
+		_endloop
+
+		nth << line_nth - 1
+		_local line << write_string(indent, scalar_part)
+		lines.add_last(line)
+	_endloop
+
+	# Now actually get the scalar.
+	.stream.get_n(nth)
+
+	lines << lines.map(
+		_proc(line)
+			## @param {sw:char16_vector} line
+			_return line + character.newline
+		_endproc)
+
+	# Apply indicator.
+	_local token_value <<
+		_if indicator _is :literal
+		_then
+			>> lines.
+				map(
+					_proc(line)
+						## @param {sw:char16_vector} line
+						_return line.trim_spaces()
+					_endproc).
+				join_as_strings(character.newline).
+				new_appending(character.newline)
+		_elif indicator _is :folded
+		_then
+			>> lines.
+				map(
+					_proc(line)
+						## @param {sw:char16_vector} line
+						_return line.trim_spaces()
+					_endproc).
+				join_as_strings(" ").
+				new_appending(character.newline)
+		_else
+			>> lines.
+				map(
+					_proc(line)
+						## @param {sw:char16_vector} line
+						_return line.trim_spaces()
+					_endproc).
+				join_as_strings(" ")
+		_endif
+
+	# Apply chomping_indicator.
+	token_value <<
+		_if chomping_indicator _is :strip
+		_then
+			>> token_value.trim_spaces()
+		_elif chomping_indicator _is :keep
+		_then
+			>> token_value
+		_else
+			>> token_value
+		_endif
+
+	_return yaml_token.new(:scalar, token_value, token_line, token_column)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.read_scalar_quoted()
+	## Read a quoted scalar.
+	## @return {myaml:yaml_token}
+	_local token_line << .stream.line
+	_local token_column << .stream.column
+
+	# Skip opening quote.
+	_local quote << .stream.get()
+
+	# Keep on reading until next ".
+	_local token_value << ""
+	_loop @over_quoted_string
+		_local chr << .stream.peek()
+		_if chr _is _unset
+		_then
+			# Oh oh, borked!
+			condition.raise(
+				:yaml_tokenizer_error,
+				:string, "Unexpected EOF in quoted scalar!",
+				:line, .stream.line,
+				:column, .stream.column,
+				:value, chr.write_string)
+		_elif chr _is character.return
+		_then
+			# Ignore this.
+			_continue
+		_elif chr _is character.newline
+		_then
+			# Skip return/newline character, and insert a space character.
+			.stream.get()
+			token_value << write_string(token_value, " ")
+
+			# Skip following whitespace.
+			_self.get_chars(character.space, character.tab)
+
+			_continue
+		_elif chr _is %\
+		_then
+			# Skip \.
+			.stream.get()
+
+			# Add escaped character, bypass normal adding.
+			_local type << .stream.get()
+			_if type _is %x
+			_then
+				_local code_point << write_string(
+					.stream.get(),
+					.stream.get())
+				_local val << _self.code_point_to_character(code_point)
+				token_value << write_string(token_value, val)
+			_elif type _is %u
+			_then
+				_local code_point << write_string(
+					.stream.get(),
+					.stream.get(),
+					.stream.get(),
+					.stream.get())
+				_local val << _self.code_point_to_character(code_point)
+				token_value << write_string(token_value, val)
+			_elif type _is %U
+			_then
+				_local code_point << write_string(
+					.stream.get(),
+					.stream.get(),
+					.stream.get(),
+					.stream.get(),
+					.stream.get(),
+					.stream.get(),
+					.stream.get(),
+					.stream.get())
+				_local val << _self.code_point_to_character(code_point)
+				token_value << write_string(token_value, val)
+			_else
+				_local val << _self.escaped_characters[type]
+				token_value << write_string(token_value, val)
+			_endif
+
+			_continue
+		_elif chr _is quote
+		_then
+			.stream.get()  # Skip closing quote.
+
+			_return yaml_token.new(:scalar, token_value, token_line, token_column)
+		_endif
+
+		.stream.get()
+		token_value << write_string(token_value, chr)
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.read_token(token_type, _gather nexts)
+	## Read a token.
+	## @param {sw:symbol} token_type
+	## @param {sw:char16_vector|sw:character} nexts
+	## @return {myaml:yaml_token}
+	_local token_line << .stream.line
+	_local token_column << .stream.column
+	_for next _over nexts.fast_elements()
+	_loop @over_nexts
+		_if next _is _unset _andif
+		    .stream.peek() _is _unset
+		_then
+			_return myaml:yaml_token.new(token_type, _unset, token_line, token_column)
+		_endif
+
+		_local next_str << next.write_string
+		_for index, next_chr _over next_str.fast_keys_and_elements()
+		_loop
+			_local peeked << .stream.peek_ahead(index)
+			_if peeked _isnt next_chr
+			_then
+				_continue @over_nexts
+			_endif
+		_endloop
+
+		# Found a match!
+		.stream.get_n(next_str.size)
+		_return myaml:yaml_token.new(token_type, next_str, token_line, token_column)
+	_endloop
+
+	sw:condition.raise(
+		:yaml_tokenizer_error,
+		:string, "Could not read next token",
+		:value, _unset,
+		:line, token_line,
+		:column, token_column)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.get_chars(_gather chars)
+	## Get characters from stream, if any.
+	## @param {sw:character} chars
+	## @return {sw:char16_vector} Read whitespace.
+	_local gotten << ""
+
+	_loop @over_stream
+		_local chr << .stream.peek()
+		_if _not chars.includes?(chr)
+		_then
+			_leave @over_stream
+		_endif
+
+		.stream.get()
+		gotten << write_string(gotten, chr)
+	_endloop
+
+	_return gotten
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.peek_chars(_gather chars)
+	## Peek characters from stream, if any.
+	## @param {sw:character} chars
+	## @return {sw:char16_vector}
+	_local peeked << ""
+
+	_local nth << 1
+	_loop @over_stream
+		_local chr << .stream.peek_ahead(nth)
+		_if _not chars.includes?(chr)
+		_then
+			_leave @over_stream
+		_endif
+
+		nth +<< 1
+		peeked << write_string(peeked, chr)
+	_endloop
+
+	_return peeked
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.get_up_to(_gather stops)
+	## Read stream up to stops, excluding stop itself, or EOL.
+	## @param {sw:char16_vector|sw:character} stops
+	## @return {sw:char16_vector} Part that was read up to.
+	## @return {sw:char16_vector|sw:unset} Stop that was matched.
+	_local token_value << ""
+	_loop @over_stream
+		_for stop _over stops.fast_elements()
+		_loop @over_stops
+			_local stop_str << stop.write_string
+			_for index, stop_chr _over stop_str.fast_keys_and_elements()
+			_loop
+				_local peeked << .stream.peek_ahead(index)
+				_if peeked _isnt stop_chr
+				_then
+					_continue @over_stops
+				_endif
+			_endloop
+
+			# Found a match!
+			_return token_value, stop_str
+		_endloop
+
+		_local chr << .stream.get()
+		_if chr _is _unset
+		_then
+			# EOF.
+			_leave @over_stream
+		_endif
+
+		token_value << write_string(token_value, chr)
+	_endloop
+
+	_return token_value, _unset  # EOF.
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_tokenizer.code_point_to_character(code_point)
+	## Convert code point to character.
+	## @param {sw:char16_vector} code_point
+	_local val << 0
+	_for digit _over code_point.fast_elements()
+	_loop
+		val << val.shift(4)
+		_if digit >= %0 _andif digit <= %9
+		_then
+			val +<< (digit.value - %0.value)
+		_elif digit.uppercase >= %A _andif digit.uppercase <= %F
+		_then
+			val +<< (digit.value - %A.value + 10)
+		_else
+			sw:condition.raise(
+				:yaml_tokenizer_error,
+				:string, "Unknown digit",
+				:value, digit,
+				:line, .stream.line,
+				:column, .stream.column - code_point.size)
+		_endif
+	_endloop
+	_return val.as_character()
+_endmethod
+$

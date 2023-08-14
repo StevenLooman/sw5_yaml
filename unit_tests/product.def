@@ -1,0 +1,9 @@
+magik_yaml_tests layered_product
+
+title
+	Tests for magik_yaml
+end
+
+# requires
+# 	munit
+# end

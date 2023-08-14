@@ -1,0 +1,114 @@
+#% text_encoding = iso8859_1
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML input stream tests.
+##
+def_slotted_exemplar(
+	:yaml_input_stream_test,
+	{
+	},
+	{@sw:test_case})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_input_stream_test.get_yaml_input_stream(filename)
+	## Get fixture path.
+	## @param {sw:char16_vector} filename
+	## @return {myaml:yaml_input_stream} Fixture path.
+	_local module << sw_module_manager.module(_self.module_name)
+	_local path << module.get_resource_file(filename, "data/fixtures")
+	_local inner_stream << sw:external_text_input_stream.new(path)
+	_return myaml:yaml_input_stream.new(inner_stream)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream_test.test_read_file()
+	## Test reading a file.
+	_local expected << write_string(
+		"test", character.newline,
+		"  scalar")
+	_local stream << _self.get_yaml_input_stream("scalar_multiline.yaml")
+	_local actual << ""
+	_loop @over_tream
+		_local chr << stream.get()
+		_if chr _is _unset
+		_then
+			_leave @over_tream
+		_endif
+
+		actual << write_string(actual, chr)
+	_endloop
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream_test.test_peek_ahead()
+	## Test peeking ahead.
+	_local expected_complete << write_string(
+		"test", character.newline,
+		"  scalar")
+	_local stream << _self.get_yaml_input_stream("scalar_multiline.yaml")
+	_for index _over 1.upto(expected_complete.size)
+	_loop
+		_local expected_chr << expected_complete[index]
+		_local actual_chr << stream.peek_ahead(index)
+		_self.assert_equals(expected_chr, actual_chr)
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream_test.test_peek_ahead_multiple()
+	## Test peeking ahead.
+	_local stream << _self.get_yaml_input_stream("scalar_multiline.yaml")
+	_local expected_chr << %t
+	_over 1.upto(10)
+	_loop
+		_local actual_chr << stream.peek_ahead(1)
+		_self.assert_equals(expected_chr, actual_chr)
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream_test.test_peek_ahead_and_get()
+	## Test peeking ahead with complete get.
+	_local expected_complete << write_string(
+		"test", character.newline,
+		"  scalar")
+	_local stream << _self.get_yaml_input_stream("scalar_multiline.yaml")
+	_for index _over 1.upto(expected_complete.size)
+	_loop
+		_local expected_chr << expected_complete[index]
+		_local peeked_chr << stream.peek_ahead(1)
+		_self.assert_equals(expected_chr, peeked_chr)
+		_local gotten_chr << stream.get()
+		_self.assert_equals(expected_chr, gotten_chr)
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_input_stream_test.test_get_n()
+	## Test peeking ahead.
+	_local expected_complete << write_string(
+		"test", character.newline,
+		"  scalar")
+	_local stream << _self.get_yaml_input_stream("scalar_multiline.yaml")
+
+	_local expected_1 << expected_complete.subseq(1, 4)
+	_local actual_1 << stream.get_n(4)
+	_self.assert_equals(expected_1, actual_1)
+
+	_local expected_2 << expected_complete.subseq(5, 1)
+	_local actual_2 << stream.get_n(1)
+	_self.assert_equals(expected_2, actual_2)
+
+	_local expected_3 << expected_complete.subseq(6, 8)
+	_local actual_3 << stream.get_n(8)
+	_self.assert_equals(expected_3, actual_3)
+_endmethod
+$

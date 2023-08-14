@@ -1,0 +1,9 @@
+sw5_yaml layered_product
+
+title
+	SW5 YAML
+end
+
+description
+	SW5 YAML encoder/decoder
+end

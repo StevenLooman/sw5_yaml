@@ -1,0 +1,245 @@
+#% text_encoding = iso8859_1
+
+_package myaml
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML encoder.
+##
+## @slot {sw:integer} indent_size Current indent size.
+## @slot {sw:internal_text_output_stream|sw:external_text_output_stream} stream Stream to write to.
+##
+def_slotted_exemplar(
+	:yaml_encoder,
+	{
+		{:indent_size, 0},
+		{:stream, _unset}
+	})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+## Indent width.
+## @return {sw:integer}
+yaml_encoder.define_shared_constant(
+	:indent_width,
+	2,
+	:public)
+$
+
+_pragma(classify_level=basic, topic={yaml})
+## Escaped characters.
+## @return {sw:property_list<sw:character, sw:character>}
+yaml_encoder.define_shared_constant(
+	:escaped_characters,
+	concurrent_hash_map.new_with(
+		%', %',
+		%", %",
+		character.newline, %n,
+		character.return, %r,
+		character.tab, %t),
+	:private)
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder.new()
+	## Constructor.
+	## @return {_self}
+	_return _clone.init()
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder.init()
+	## Initializer.
+	## @return {_self}
+	.indent_size << 0
+	_return _self
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder.generate_string(data)
+	## Generate string from `data`.
+	## @param {sw:char16_vector|sw:externally_keyed_collection_mixin|sw:indexed_collection_mixin} data
+	## @return {sw:char16_vector} Data encoded as string.
+	.stream << internal_text_output_stream.new()
+	_self.encode_data(data)
+	_return .stream.string
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_encoder.generate_file(data, filename)
+	## Generate string from `data`, write to file.
+	## @param {sw:char16_vector|sw:externally_keyed_collection_mixin|sw:indexed_collection_mixin} data
+	## @param {sw:char16_vector} filename Path to file.
+	.stream << external_text_output_stream.new(filename)
+	_protect
+		_self.encode_data(data)
+	_protection
+		.stream.close()
+	_endprotect
+	.stream
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder.encode_data(data, _optional first_requires_indent?, flow_style?)
+	## Encode data to stream.
+	## @param {sw:char16_vector|sw:externally_keyed_collection_mixin|sw:indexed_collection_mixin} data
+	## @param {sw:false} first_requires_indent?
+	## @param {sw:false} flow_style?
+	_if data _is _unset
+	_then
+		_self.encode_null(data, first_requires_indent?, flow_style?)
+	_elif data.is_kind_of?(char16_vector)
+	_then
+		_self.encode_scalar(data, first_requires_indent?, flow_style?)
+	_elif data.is_kind_of?(indexed_collection_mixin)
+	_then
+		_self.encode_sequence(data, first_requires_indent?, flow_style?)
+	_elif data.is_kind_of?(keys_and_elements_mixin)
+	_then
+		_self.encode_mapping(data, first_requires_indent?, flow_style?)
+	_endif
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder.encode_null(data, _optional first_requires_indent?, flow_style?)
+	## Encode scalar to stream.
+	## @param {sw:unset} data
+	## @param {sw:false} first_requires_indent?
+	## @param {sw:false} flow_style?
+	system  # pass
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder.encode_scalar(data, _optional first_requires_indent?, flow_style?)
+	## Encode scalar to stream.
+	## @param {sw:char16_vector} data
+	## @param {sw:false} first_requires_indent?
+	## @param {sw:false} flow_style?
+	_local escaped_characters << set.new_from(_self.escaped_characters.keys)
+	_local data_set << set.new_from(data)
+	_local quoted? << _not escaped_characters.intersection(data_set).empty?
+	_if quoted?
+	_then
+		.stream.write('"')
+	_endif
+
+	_for chr _over data.fast_elements()
+	_loop
+		_if escaped_characters.includes?(chr)
+		_then
+			.stream.write("\")
+			_local escaped << _self.escaped_characters[chr]
+			.stream.write(escaped)
+		_else
+			.stream.write(chr)
+		_endif
+	_endloop
+
+	_if quoted?
+	_then
+		.stream.write('"')
+	_endif
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder.encode_mapping(data, _optional first_requires_indent?, flow_style?)
+	## Encode mapping to stream.
+	## @param {sw:keys_and_elements_mixin} data
+	## @param {sw:false} first_requires_indent?
+	## @param {sw:false} flow_style?
+	_local first? << _true
+	_local keys << data.keys
+	_for key _over keys.fast_elements()
+	_loop
+		_if _not key.is_kind_of?(char16_vector)
+		_then
+			condition.raise(
+				:yaml_encoder_error,
+				:string, "Mapping keys can only be scalars",
+				:value, key)
+		_endif
+
+		_local element << data[key]
+
+		_if _not first? _orif
+		    first_requires_indent? _is _true
+		_then
+			.stream.write(.indent_size * _self.indent_width * " ")
+		_endif
+
+		_self.encode_data(key, _unset, _true)
+		_if element _is _unset
+		_then
+			.stream.write(":")
+		_elif element.is_kind_of?(externally_keyed_collection_mixin)
+		_then
+			# Mappings and sequences go on a new line.
+			.stream.write(":")
+			.stream.write(character.newline)
+		_elif element.is_kind_of?(char16_vector)
+		_then
+			.stream.write(": ")
+		_elif element.is_kind_of?(ro_indexed_collection_mixin)
+		_then
+			.stream.write(":")
+			.stream.write(character.newline)
+		_endif
+
+		.indent_size +<< 1
+		_local element_is_mapping? <<
+			element.is_kind_of?(externally_keyed_collection_mixin) _orif
+			element.is_kind_of?(ro_indexed_collection_mixin)
+		_self.encode_data(element, element_is_mapping?)
+		.indent_size -<< 1
+
+		_if key <> keys.last  # Don't newline after last element.
+		_then
+			.stream.write(character.newline)
+		_endif
+
+		first? << _false
+	_endloop
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_encoder.encode_sequence(data, _optional first_requires_indent?, flow_style?)
+	## Encode sequence to stream.
+	## @param {sw:indexed_collection_mixin} data
+	## @param {sw:false} first_requires_indent?
+	## @param {sw:false} flow_style?
+	_local first? << _true
+	_for index, element _over data.fast_keys_and_elements()
+	_loop
+		_if _not first? _orif
+		    first_requires_indent? _is _true
+		_then
+			.stream.write(.indent_size * _self.indent_width * " ")
+		_endif
+
+		_if element _isnt _unset
+		_then
+			.stream.write("- ")
+			.indent_size +<< 1
+			_self.encode_data(element, _false)
+			.indent_size -<< 1
+		_else
+			.stream.write("-")
+		_endif
+
+		_if index <> data.size  # Don't newline after last element.
+		_then
+			.stream.write(character.newline)
+		_endif
+
+		first? << _false
+	_endloop
+_endmethod
+$

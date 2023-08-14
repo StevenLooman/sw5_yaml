@@ -1,0 +1,7 @@
+sw5_yaml	1
+
+description
+	SW5 YAML serializer/deserializer
+end
+
+language en_gb

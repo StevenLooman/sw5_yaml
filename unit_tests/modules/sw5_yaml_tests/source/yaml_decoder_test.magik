@@ -1,0 +1,207 @@
+#% text_encoding = iso8859_1
+
+_pragma(classify_level=basic, topic={yaml})
+##
+## YAML decoder tests.
+##
+def_slotted_exemplar(
+	:yaml_decoder_test,
+	{
+	},
+	{@sw:test_case})
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_private _method yaml_decoder_test.parse_yaml_fixture(filename)
+	## Read a YAML fixture file.
+	## @param {sw:char16_vector} filename
+	## @return {sw:char16_vector|sw:concurrent_hash_map|sw:rope|sw:unset} Parsed YAML document.
+	_local module << sw_module_manager.module(_self.module_name)
+	_local path << module.get_resource_file(filename, "data/fixtures")
+	_local decoder << myaml:yaml_decoder.new(:keep_scalar_keys?, _true)
+	_return decoder.parse_file(path)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_empty_document()
+	## Test decoding an empty document.
+	_local actual << _self.parse_yaml_fixture("empty.yaml")
+	_self.assert_unset(actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar()
+	## Test decoding a document with a scalar.
+	_local expected << "test scalar"
+	_local actual << _self.parse_yaml_fixture("scalar.yaml")
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar_with_special_chars()
+	## Test decoding a document with a quoted scalar.
+	_local expected << 'abc:d,e-f\"{}[]'
+	_local actual << _self.parse_yaml_fixture("scalar_with_special_chars.yaml")
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar_multiline()
+	## Test decoding a document with a quoted scalar.
+	_local expected << "test scalar"
+	_local actual << _self.parse_yaml_fixture("scalar_multiline.yaml")
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar_quoted()
+	## Test decoding a document with a quoted scalar.
+	_local expected << "test scalar"
+	_local actual << _self.parse_yaml_fixture("scalar_quoted.yaml")
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar_quoted_escaped()
+	## Test decoding a document with a quoted scalar.
+	_local expected << 'abc"def'
+	_local actual << _self.parse_yaml_fixture("scalar_quoted_escaped.yaml")
+	_self.assert_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar_quoted_multiline()
+	## Test decoding a document with a quoted scalar.
+	_local actual << _self.parse_yaml_fixture("scalar_quoted_multiline.yaml")
+	_self.assert_equals("abc def", actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar_literal()
+	## Test decoding a document with a quoted scalar.
+	_local expected << sw:concurrent_hash_map.new_with(
+		"a", write_string("123", character.newline, "456", character.newline, "789", character.newline))
+	_local actual << _self.parse_yaml_fixture("scalar_literal.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_scalar_folded()
+	## Test decoding a document with a quoted scalar.
+	_local expected << sw:concurrent_hash_map.new_with(
+		"a", write_string("123 456 789", character.newline))
+	_local actual << _self.parse_yaml_fixture("scalar_folded.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_sequence_block()
+	## Test decoding a document with a sequence.
+	_local expected << rope.new_with("a", _unset, "c")
+	_local actual << _self.parse_yaml_fixture("sequence.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_sequence_flow()
+	## Test decoding a document with a sequence.
+	_local expected << rope.new_with("1", "2", "3", "4")
+	_local actual << _self.parse_yaml_fixture("sequence_flow.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_mapping_block()
+	## Test decoding a document with a sequence in block style.
+	_local expected << concurrent_hash_map.new_with(
+		"a", "1",
+		"b", _unset,
+		"c", "3")
+	_local actual << _self.parse_yaml_fixture("mapping_block.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_mapping_flow()
+	## Test decoding a document with a sequence in flow style.
+	_local expected << concurrent_hash_map.new_with(
+		"a", "b",
+		"c", "d",
+		"e", "f")
+	_local actual << _self.parse_yaml_fixture("mapping_flow.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_sequence_of_mappings()
+	## Test decoding a document with a sequence.
+	_local expected << rope.new_with(
+		concurrent_hash_map.new_with(
+			"a", "b",
+			"c", "d"),
+		concurrent_hash_map.new_with(
+			"e", "f",
+			"g", "h"))
+	_local actual << _self.parse_yaml_fixture("sequence_of_mappings.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_mapping_of_sequences()
+	## Test decoding a document with a sequence.
+	_local expected << concurrent_hash_map.new_with(
+		"a", rope.new_with("1", "2"),
+		"b", rope.new_with("3", "4"))
+	_local actual << _self.parse_yaml_fixture("mapping_of_sequences.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_sequence_of_sequences()
+	## Test decoding a document with a sequence.
+	_local expected << rope.new_with(
+		rope.new_with(
+			"a",
+			"b",
+			"c"),
+		rope.new_with(
+			"d",
+			"e",
+			"f"))
+	_local actual << _self.parse_yaml_fixture("sequence_of_sequences.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$
+
+_pragma(classify_level=basic, topic={yaml})
+_method yaml_decoder_test.test_mapping_of_mappings()
+	## Test decoding a document with a sequence.
+	_local expected << concurrent_hash_map.new_with(
+		"a", concurrent_hash_map.new_with(
+			"1", "a",
+			"2", "b",
+			"3", "c"),
+		"b", concurrent_hash_map.new_with(
+			"4", "d",
+			"5", "e",
+			"6", "f"))
+	_local actual << _self.parse_yaml_fixture("mapping_of_mappings.yaml")
+	_self.assert_deep_equals(expected, actual)
+_endmethod
+$

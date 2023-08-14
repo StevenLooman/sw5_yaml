@@ -1,0 +1,12 @@
+#% text_encoding = iso8859_1
+
+_block
+	condition.define_condition(:myaml_error, :error, {})
+	condition.define_condition(:myaml_warning, :warning, {})
+	condition.define_condition(:myaml_information, :information, {})
+
+	condition.define_condition(:yaml_tokenizer_error, :myaml_error, {:string, :value, :line, :column})
+	condition.define_condition(:yaml_decoder_error, :myaml_error, {:string, :token})
+	condition.define_condition(:yaml_encoder_error, :myaml_error, {:string, :value})
+_endblock
+$
